@@ -1,85 +1,114 @@
-/*************************************************************
-  Download latest Blynk library here:
-    https://github.com/blynkkk/blynk-library/releases/latest
-
-  Blynk is a platform with iOS and Android apps to control
-  Arduino, Raspberry Pi and the likes over the Internet.
-  You can easily build graphic interfaces for all your
-  projects by simply dragging and dropping widgets.
-
-    Downloads, docs, tutorials: http://www.blynk.cc
-    Sketch generator:           http://examples.blynk.cc
-    Blynk community:            http://community.blynk.cc
-    Follow us:                  http://www.fb.com/blynkapp
-                                http://twitter.com/blynk_app
-
-  Blynk library is licensed under MIT license
-  This example code is in public domain.
-
- *************************************************************
-
-  This example shows how value can be pushed from Arduino to
-  the Blynk App.
-
-  NOTE:
-  BlynkTimer provides SimpleTimer functionality:
-    http://playground.arduino.cc/Code/SimpleTimer
-
-  App project setup:
-    Value Display widget attached to Virtual Pin V5
- *************************************************************/
-
-/* Comment this out to disable prints and save space */
-#define BLYNK_PRINT Serial
-
-
-#include <ESP8266WiFi.h>
-#include <BlynkSimpleEsp8266.h>
-
-// You should get Auth Token in the Blynk App.
-// Go to the Project Settings (nut icon).
-char auth[] = "61_Dr5WMxZlIdlZfXZeFCiW3ZE8tvrx-";
-
-// Your WiFi credentials.
-// Set password to "" for open networks.
-char ssid[] = "D-link";
-char pass[] = "810821999";
-
-BlynkTimer timer;
-float vref = 3.3;
-float resolution = vref/1023;
-const int sensor_pin = D0;
+#include <SoftwareSerial.h>
+#define RX 10
+#define TX 11
+String AP = "redmi";       // CHANGE ME
+String PASS = "123456789"; // CHANGE ME
+String API = "BQHV4Z9QB659WL61";   // CHANGE ME
+String HOST = "api.thingspeak.com";
+String PORT = "80";
+String field2 = "field2";
+String field1 = "field1";
+int countTrueCommand;
+int countTimeCommand; 
+boolean found = false; 
+int valSensor1 = 1;
+int valSensor2 = 1;
+SoftwareSerial esp8266(RX,TX); 
+const int lm35_pin = A1;
+int temp_adc_val;
+float temp_val;
+const int sensor_pin = A0;
 float moisture_percentage;
-
-// This function sends Arduino's up time every second to Virtual Pin (5).
-// In the app, Widget's reading frequency should be set to PUSH. This means
-// that you define how often to send data to Blynk App.
-void myTimerEvent()
-{
-  float temperature = analogRead(A0);
-  temperature = (temperature*resolution);
-  temperature = temperature*100;
-  Blynk.virtualWrite(V5, temperature);
-  moisture_percentage = ( 100.00 - ( (analogRead(sensor_pin)/1023.00) * 100.00 ) );
-  Blynk.virtualWrite(V6, moisture_percentage);
-}
-
-void setup()
-{
-  // Debug console
+int sensor_analog; 
+float vref = 3.3;
+float resolution = vref/1023; 
+int motorPin = A2;
+ 
+  
+void setup() {
   Serial.begin(9600);
-
-  Blynk.begin(auth, ssid, pass);
-  // You can also specify server:
-  //Blynk.begin(auth, ssid, pass, "blynk-cloud.com", 80);
-  //Blynk.begin(auth, ssid, pass, IPAddress(192,168,1,100), 8080);
-
-  // Setup a function to be called every second
-  timer.setInterval(1000L, myTimerEvent);
+  esp8266.begin(115200);
+  sendCommand("AT",5,"OK");
+  sendCommand("AT+CWMODE=1",5,"OK");
+  sendCommand("AT+CWJAP=\""+ AP +"\",\""+ PASS +"\"",20,"OK");
+  pinMode(motorPin, OUTPUT);
 }
-
-void loop()
-{
-  Blynk.run();
-  timer.run(); // Initiates BlynkTimer
+void loop() {
+  //temp value
+ valSensor1 = getSensorData1();
+ String getData = "GET /update?api_key="+ API +"&"+ field2 +"="+String(valSensor1);
+sendCommand("AT+CIPMUX=1",5,"OK");
+ sendCommand("AT+CIPSTART=0,\"TCP\",\""+ HOST +"\","+ PORT,15,"OK");
+ sendCommand("AT+CIPSEND=0," +String(getData.length()+4),4,">");
+ esp8266.println(getData);delay(1500);countTrueCommand++;
+ sendCommand("AT+CIPCLOSE=0",5,"OK");
+//moisture value
+  valSensor2 = getSensorData2();
+ String getData2 = "GET /update?api_key="+ API +"&"+ field1 +"="+String(valSensor2);
+sendCommand("AT+CIPMUX=1",5,"OK");
+ sendCommand("AT+CIPSTART=0,\"TCP\",\""+ HOST +"\","+ PORT,15,"OK");
+ sendCommand("AT+CIPSEND=0," +String(getData2.length()+4),4,">");
+ esp8266.println(getData2);delay(1500);countTrueCommand++;
+ sendCommand("AT+CIPCLOSE=0",5,"OK");
+ if(valSensor2<60){
+    digitalWrite(A2, HIGH);
+    while(valSensor2<60){valSensor2 = getSensorData2();}
+    digitalWrite(A2,LOW);
+   
+    }
+    
+  
 }
+int getSensorData1(){
+  
+float temperature = analogRead(A1);
+ temperature = (temperature*500)/1023;
+ //temperature = temperature*100;
+ Serial.print("Temperature is : ");
+ Serial.println(temperature);
+  
+  return temperature; 
+}
+int getSensorData2(){
+  
+ sensor_analog = analogRead(sensor_pin);
+  moisture_percentage = ( 100 - ( (sensor_analog/1023.00) * 100 ) );
+  Serial.print("Moisture Percentage = ");
+  Serial.print(moisture_percentage);
+  Serial.print("%\n\n");
+ 
+  return moisture_percentage; 
+}
+void sendCommand(String command, int maxTime, char readReplay[]) {
+  Serial.print(countTrueCommand);
+  Serial.print(". at command => ");
+  Serial.print(command);
+  Serial.print(" ");
+  while(countTimeCommand < (maxTime*1))
+  {
+    esp8266.println(command);//at+cipsend
+    if(esp8266.find(readReplay))//ok
+    {
+      found = true;
+      break;
+    }
+  
+    countTimeCommand++;
+  }
+  
+  if(found == true)
+  {
+    Serial.println("OYI");
+    countTrueCommand++;
+    countTimeCommand = 0;
+  }
+  
+  if(found == false)
+  {
+    Serial.println("Fail");
+    countTrueCommand = 0;
+    countTimeCommand = 0;
+  }
+  
+  found = false;
+ }
